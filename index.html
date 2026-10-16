@@ -645,6 +645,48 @@
 
         </div>
 
+        <div class="area">
+    <h4>バフ設定</h4>
+
+    <select id="buffType"></select>
+
+    <input
+        type="number"
+        id="buffValue"
+        placeholder="量"
+    >
+
+    <button id="addBuffButton">
+        追加
+    </button>
+
+    <div id="buffList"></div>
+</div>
+
+<div class="area">
+    <h4>ターン予定</h4>
+
+    <select id="turnNumber"></select>
+
+    <select id="turnType">
+        <option value="Vo">Vo</option>
+        <option value="Da">Da</option>
+        <option value="Vi">Vi</option>
+    </select>
+
+    <button id="setTurnType">
+        登録
+    </button>
+
+    <div id="turnScheduleList"></div>
+</div>
+
+        <button id="startButton">
+            開始
+        </button>
+
+        <div id="battleArea"></div>
+
 
     </main>
 
@@ -728,8 +770,7 @@
 <!-- カードデータ -->
 
 <script src="cards.js"></script>
-
-
+<script src="buffs.js"></script>
 
 <script>
 
@@ -750,6 +791,340 @@
 
     };
 
+let playing = false;
+
+let battleturn = 0;
+ 
+let battleData = {
+hand: [],
+deck: [],
+discard: [],
+exclude: []
+};
+
+let actionCount = 1; // 現在使える回数
+let carryActionCount = 0; // 次ターンへ持ち越し
+
+let draw = 3; //ドロー枚数
+
+let buffs = {}; //設定したバフ
+
+let turnSchedule = {}; //ターンの種類
+
+document
+.getElementById("startButton")
+.addEventListener("click", toggleGame);
+
+function toggleGame() {
+ 
+if (!playing) {
+ 
+startGame();
+ 
+} else {
+ 
+endGame();
+ 
+}
+}
+
+function startGame() {
+
+    playing = true;
+
+    battleturn =
+        Number(document.getElementById("turn").value || 0
+    );
+
+    document.getElementById(
+        "startButton"
+    ).textContent = "終了";
+
+    battleData = {
+        hand: [...cardData.hand],
+        deck: [...cardData.deck],
+        discard: [...cardData.discard],
+        exclude: [...cardData.exclude]
+    };
+
+    carryActionCount = 0;
+    actionCount = 1;
+
+    draw = 3;
+
+    if(battleData.hand.length < 1){
+        drawCard(draw);
+    }
+
+    renderBattle();
+}
+
+function endGame() {
+
+    playing = false;
+
+    document.getElementById(
+        "startButton"
+    ).textContent = "開始";
+
+    document.getElementById(
+        "battleArea"
+    ).innerHTML = "";
+}
+
+function renderBattle() {
+
+    const area =
+        document.getElementById(
+            "battleArea"
+        );
+
+
+    area.innerHTML = "";
+
+    area.innerHTML += `
+        <h3>シミュレーション</h3>
+
+        <div>
+            残りターン:
+            <span id = "turnDisplay"></span>
+        </div>
+
+        <div>
+            再行動:
+            <span id="actionDisplay"></span>
+        </div>
+
+        <button id="skipButton">
+            Skip
+        </button>
+
+        <div>
+            手札:
+            <div id="battleHand"></div>
+        </div>
+
+        <div>
+            山札:
+            <span id="deckCount"></span>
+        </div>
+
+        <div>
+            捨て札:
+            <span id="discardCount"></span>
+        </div>
+
+        <div>
+            除外:
+            <span id="excludeCount"></span>
+        </div>
+    `;
+
+    renderBattleHand();
+
+    document
+    .getElementById("skipButton")
+    .addEventListener(
+        "click",
+        nextTurn
+    );
+}
+
+function renderBattleHand() {
+
+    const handArea =
+        document.getElementById(
+            "battleHand"
+        );
+
+    handArea.innerHTML = "";
+
+    battleData.hand.forEach(
+        (card,index)=>{
+
+            const img =
+                document.createElement(
+                    "img"
+                );
+
+            img.src = card.image;
+
+            img.style.width =
+                "100px";
+
+            img.style.cursor =
+                "pointer";
+
+            if(battleturn > 0){
+                img.addEventListener(
+                    "click",
+                    ()=>{
+                        useCard(index);
+                    }
+                );
+
+
+            }
+            
+
+            handArea.appendChild(img);
+        }
+    );
+
+    updateCounts();
+}
+
+function useCard(index) {
+
+    if(carryActionCount > 0){
+        carryActionCount--;
+    }else if(actionCount > 0){
+        actionCount--;
+    }else{
+        return;
+    }
+
+    const card =
+        battleData.hand[index];
+
+    battleData.hand.splice(
+        index,
+        1
+    );
+
+    battleData.discard.push(
+        card
+    );
+
+    if(actionCount <= 0 && carryActionCount <= 0){
+       nextTurn(); 
+    }
+    
+    renderBattleHand();
+}
+
+////////////////////////////////////////////////////////////////////
+
+function nextTurn() {
+
+    if(battleturn < 1){
+        console.log("end");
+        return;
+    }
+
+    carryActionCount += actionCount;
+
+    // 手札処理
+    while (battleData.hand.length > 0) {
+
+        const card =
+            battleData.hand.shift();
+
+        if (
+            card.tags &&
+            card.tags.includes("一度のみ使用可")
+        ) {
+
+            battleData.exclude.push(card);
+
+        } else {
+
+            battleData.discard.push(card);
+
+        }
+    }
+    battleturn =
+        Number(battleturn) - 1;
+
+    // 次ターンの使用回数
+    actionCount =
+    carryActionCount + 1;
+
+    // 持越しを消費済みに
+    carryActionCount = 0;
+
+    // ドロー
+
+    console.log("require draw");
+    drawCard(draw);
+
+    draw = 3;
+
+    renderBattleHand();
+}
+
+//ここまで
+
+function drawCard(count) {
+
+    for(
+       let i = 0; i < count; i++ 
+    ) {
+        if (
+            battleData.deck.length === 0 && battleData.discard.length > 0
+        ) {
+            battleData.deck =
+                [...battleData.discard];
+
+            battleData.discard = [];
+
+            battleData.deck.sort(
+                () => Math.random() - 0.5
+            );
+        }
+
+        if(
+            battleData.deck.length < 1
+        ) {
+            break;
+
+            console.log("Fail");
+        }
+
+        const card =
+            battleData.deck.shift();
+
+        battleData.hand.push(card);
+
+        console.log("draw");
+    }
+
+    
+}
+
+function updateCounts() {
+
+    
+    document.getElementById(
+        "actionDisplay"
+    ).textContent =
+        carryActionCount + actionCount;
+
+    document.getElementById(
+        "turnDisplay"
+    ).textContent = battleturn;
+
+    document.getElementById(
+        "deckCount"
+    ).textContent =
+        battleData.deck
+            .map(c => c.name)
+            .join(" , ");
+
+    document.getElementById(
+        "discardCount"
+    ).textContent =
+        battleData.discard
+            .map(c => c.name)
+            .join(" , ");
+
+    document.getElementById(
+        "excludeCount"
+    ).textContent =
+        battleData.exclude
+            .map(c => c.name)
+            .join(" , ");
+}
 
     /* =================================
        選択中タグ
@@ -1213,6 +1588,194 @@
             }
         );
 
+//バフ
+
+function renderBuffList(){
+
+    const area =
+        document.getElementById(
+            "buffList"
+        );
+
+    area.innerHTML = "";
+
+    Object.entries(buffs)
+    .forEach(([name,value])=>{
+
+        if(value <= 0){
+            return;
+        }
+
+        area.innerHTML +=
+        `
+        <div>
+            ${name}
+            :
+            ${value}
+        </div>
+        `;
+    });
+}
+
+function initBuffTypes(){
+
+    const select =
+        document.getElementById(
+            "buffType"
+        );
+
+    buffTypes.forEach(buff=>{
+
+        const option =
+            document.createElement(
+                "option"
+            );
+
+        option.value = buff;
+
+        option.textContent = buff;
+
+        select.appendChild(option);
+
+    });
+}
+
+document
+.getElementById(
+    "addBuffButton"
+)
+.addEventListener(
+    "click",
+    ()=>{
+
+        const type =
+            document.getElementById(
+                "buffType"
+            ).value;
+
+        const value =
+            Number(
+                document.getElementById(
+                    "buffValue"
+                ).value
+            );
+
+        buffs[type] = value;
+
+        renderBuffList();
+
+    }
+);
+
+//ターン表示
+
+function renderTurnSchedule(){
+
+    const area =
+        document.getElementById(
+            "turnScheduleList"
+        );
+
+    area.innerHTML = "";
+
+    const maxTurn =
+        Number(
+            document.getElementById(
+                "turn"
+            ).value || 0
+        );
+
+    for(
+        let i = 1;
+        i <= maxTurn;
+        i++
+    ){
+
+        const type =
+            turnSchedule[i]
+            || "ランダム";
+
+        area.innerHTML +=
+        `
+        <div>
+            ${i}ターン目 :
+            ${type}
+        </div>
+        `;
+    }
+}
+
+document
+.getElementById(
+    "setTurnType"
+)
+.addEventListener(
+    "click",
+    ()=>{
+
+        const turn =
+            Number(
+                document.getElementById(
+                    "turnNumber"
+                ).value
+            );
+
+        const type =
+            document.getElementById(
+                "turnType"
+            ).value;
+
+        turnSchedule[turn] =
+            type;
+
+        renderTurnSchedule();
+
+    }
+);
+
+document
+.getElementById("turn")
+.addEventListener(
+    "change",
+    ()=>{
+
+        const select =
+            document.getElementById(
+                "turnNumber"
+            );
+
+        select.innerHTML = "";
+
+        const count =
+            Number(
+                document.getElementById(
+                    "turn"
+                ).value || 0
+            );
+
+        for(
+            let i = 1;
+            i <= count;
+            i++
+        ){
+
+            const option =
+                document.createElement(
+                    "option"
+                );
+
+            option.value = i;
+
+            option.textContent =
+                `${i}ターン目`;
+
+            select.appendChild(
+                option
+            );
+        }
+
+    }
+);
 
     /* =================================
        初期化
@@ -1222,6 +1785,7 @@
 
     renderCardList();
 
+    initBuffTypes();
 
 </script>
 
