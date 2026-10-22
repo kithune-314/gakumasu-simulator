@@ -1012,8 +1012,6 @@ function nextTurn() {
         return;
     }
 
-    carryActionCount += actionCount;
-
     // 手札処理
     while (battleData.hand.length > 0) {
 
@@ -1048,6 +1046,7 @@ function nextTurn() {
     console.log("require draw");
     drawCard(draw);
 
+    //ここの数値を変えるバフを用意する
     draw = 3;
 
     renderBattleHand();
@@ -1098,7 +1097,7 @@ function updateCounts() {
     document.getElementById(
         "actionDisplay"
     ).textContent =
-        carryActionCount + actionCount;
+        carryActionCount + actionCount - 1;
 
     document.getElementById(
         "turnDisplay"
