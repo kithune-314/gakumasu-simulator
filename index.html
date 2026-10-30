@@ -51,6 +51,31 @@
 
         }
 
+        .battle-header{
+
+            display:flex;
+
+            align-items:flex-start;
+
+            gap:20px;
+
+            margin-top:20px;
+
+        }
+
+        .buff-panel{
+
+            min-width:200px;
+
+            background:white;
+
+            border:1px solid #ccc;
+
+            border-radius:8px;
+
+            padding:10px;
+
+        }
 
         /* =========================
            左側
@@ -68,6 +93,21 @@
         /* =========================
            パラメータ
         ========================= */
+
+        #Vo{
+            color:#ff0000;
+            border:2px solid #ff0000;
+        }
+
+        #Da{
+            color:#0000ff;
+            border:2px solid #0000ff;
+        }
+
+        #Vi{
+            color:#ffff00;
+            border:2px solid #ffff00;
+        }
 
         .parameter {
 
@@ -207,6 +247,17 @@
 
         }
 
+        .status-sidebar{
+
+            width:250px;
+
+            position:sticky;
+
+            top:20px;
+
+            align-self:flex-start;
+
+        }
 
         /* =========================
            右側
@@ -672,24 +723,37 @@
         <option value="Vo">Vo</option>
         <option value="Da">Da</option>
         <option value="Vi">Vi</option>
+
     </select>
 
     <button id="setTurnType">
         登録
     </button>
 
+    <button id="resetTurnSchedule">
+    リセット
+    </button>
+
     <div id="turnScheduleList"></div>
 </div>
 
-        <button id="startButton">
-            開始
-        </button>
+        
+<div class="battle-header">
 
-        <div id="battleArea"></div>
+    <button id="startButton">
+        開始
+    </button>
+
+</div>
+
+<div id="battleArea"></div>
 
 
     </main>
 
+    <!-- =================================
+        中央
+    ================================== -->
 
 
     <!-- =================================
@@ -791,6 +855,8 @@
 
     };
 
+let visibleDeckOrder = []; //表示している山札
+
 let playing = false;
 
 let battleturn = 0;
@@ -810,6 +876,7 @@ let draw = 3; //ドロー枚数
 let buffs = {}; //設定したバフ
 
 let turnSchedule = {}; //ターンの種類
+let battleTurnType = {};
 
 document
 .getElementById("startButton")
@@ -836,16 +903,25 @@ function startGame() {
         Number(document.getElementById("turn").value || 0
     );
 
+    generateBattleTurnTypes();
+    renderTurnSchedule();
+
     document.getElementById(
         "startButton"
     ).textContent = "終了";
 
     battleData = {
-        hand: [...cardData.hand],
-        deck: [...cardData.deck],
-        discard: [...cardData.discard],
-        exclude: [...cardData.exclude]
+        hand: structuredClone(cardData.hand),
+        deck: structuredClone(cardData.deck),
+        discard: structuredClone(cardData.discard),
+        exclude: structuredClone(cardData.exclude)
     };
+
+    visibleDeckOrder = [...battleData.deck];
+
+    visibleDeckOrder.sort(
+        () => Math.random() - 0.5
+    );
 
     carryActionCount = 0;
     actionCount = 1;
@@ -862,6 +938,10 @@ function startGame() {
 function endGame() {
 
     playing = false;
+
+    battleTurnType = {};
+
+    renderTurnSchedule();
 
     document.getElementById(
         "startButton"
@@ -888,6 +968,7 @@ function renderBattle() {
         <div>
             残りターン:
             <span id = "turnDisplay"></span>
+            <span id="turnTypeDisplay"></span>
         </div>
 
         <div>
@@ -918,9 +999,15 @@ function renderBattle() {
             除外:
             <span id="excludeCount"></span>
         </div>
+
+        <div class="buff-panel">
+            <h4>現在バフ</h4>
+            <div id="battleBuffList"></div>
+        </div>
     `;
 
     renderBattleHand();
+    renderBattleBuffs();
 
     document
     .getElementById("skipButton")
@@ -1070,20 +1157,38 @@ function drawCard(count) {
             battleData.deck.sort(
                 () => Math.random() - 0.5
             );
+
+            visibleDeckOrder =
+                [...battleData.deck];
+
+            visibleDeckOrder.sort(
+                () => Math.random() - 0.5
+            );
         }
 
         if(
             battleData.deck.length < 1
         ) {
-            break;
-
             console.log("Fail");
+            break;
         }
 
         const card =
             battleData.deck.shift();
 
         battleData.hand.push(card);
+
+        const visibleIndex =
+            visibleDeckOrder.findIndex(
+                c => c.uid === card.uid
+            );
+
+        if (visibleIndex !== -1) {
+            visibleDeckOrder.splice(
+                visibleIndex,
+                1
+            );
+        }
 
         console.log("draw");
     }
@@ -1106,7 +1211,7 @@ function updateCounts() {
     document.getElementById(
         "deckCount"
     ).textContent =
-        battleData.deck
+        visibleDeckOrder
             .map(c => c.name)
             .join(" , ");
 
@@ -1123,6 +1228,13 @@ function updateCounts() {
         battleData.exclude
             .map(c => c.name)
             .join(" , ");
+
+    document.getElementById(
+        "turnTypeDisplay"
+    ).textContent =
+        getTurnType(
+            battleturn
+        );
 }
 
     /* =================================
@@ -1409,14 +1521,18 @@ function updateCounts() {
 
 
         cardData[area].push({
+        
+            uid: crypto.randomUUID(),
 
             id: card.id,
-
             name: card.name,
-
             image: card.image,
+            tags: [...(card.tags || [])],
 
-            tags: card.tags
+            buffs : {},
+            costModifier: 0,
+            powerModifier: 0,
+            useCount: 0,
 
         });
 
@@ -1639,6 +1755,73 @@ function initBuffTypes(){
     });
 }
 
+function renderBattleBuffs(){
+
+    const area =
+        document.getElementById(
+            "battleBuffList"
+        );
+
+    if(!area){
+        return;
+    }
+
+    area.innerHTML = "";
+
+    Object.entries(buffs)
+    .forEach(([name,value])=>{
+
+        if(value <= 0){
+            return;
+        }
+
+        area.innerHTML +=
+        `
+        <div>
+            ${name}
+            :
+            ${value}
+        </div>
+        `;
+    });
+
+}
+
+function generateBattleTurnTypes(){
+
+    battleTurnType = {};
+
+    const maxTurn =
+        Number(
+            document.getElementById(
+                "turn"
+            ).value || 0
+        );
+
+    for(
+        let i = 1;
+        i <= maxTurn;
+        i++
+    ){
+
+        battleTurnType[i] =
+            turnSchedule[i]
+            ||
+            ["Vo","Da","Vi"][
+                Math.floor(
+                    Math.random() * 3
+                )
+            ];
+    }
+}
+
+function getTurnType(turnNo){
+
+    return battleTurnType[turnNo]
+        || "未定";
+
+}
+
 document
 .getElementById(
     "addBuffButton"
@@ -1662,6 +1845,7 @@ document
         buffs[type] = value;
 
         renderBuffList();
+        renderBattleBuffs();
 
     }
 );
@@ -1690,14 +1874,35 @@ function renderTurnSchedule(){
         i++
     ){
 
-        const type =
-            turnSchedule[i]
-            || "ランダム";
+        let type = "ランダム";
+
+        if(battleTurnType[i]){
+            type = battleTurnType[i];
+        }
+        else if(turnSchedule[i]){
+            type = turnSchedule[i];
+        }
+
+        let color = "#666";
+
+        if(type === "Vo"){
+            color = "#ff0000";
+        }
+        else if(type === "Da"){
+            color = "#0000ff";
+        }
+        else if(type === "Vi"){
+            color = "#ffd700";
+        }
 
         area.innerHTML +=
         `
         <div>
-            ${i}ターン目 :
+            残り${i}ターン :
+            <span style="
+                color:${color};
+                font-weight:bold;
+            ">
             ${type}
         </div>
         `;
@@ -1727,6 +1932,21 @@ document
         turnSchedule[turn] =
             type;
 
+        renderTurnSchedule();
+
+    }
+);
+
+document
+.getElementById(
+    "resetTurnSchedule"
+)
+.addEventListener(
+    "click",
+    ()=>{
+
+        turnSchedule = {};
+        battleTurnType = {};
         renderTurnSchedule();
 
     }
@@ -1766,15 +1986,17 @@ document
             option.value = i;
 
             option.textContent =
-                `${i}ターン目`;
+                `残り${i}ターン`;
 
             select.appendChild(
                 option
             );
         }
 
+        renderTurnSchedule();
     }
 );
+
 
     /* =================================
        初期化
@@ -1785,6 +2007,8 @@ document
     renderCardList();
 
     initBuffTypes();
+
+    renderBattleBuffs();
 
 </script>
 
